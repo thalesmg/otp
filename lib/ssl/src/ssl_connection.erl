@@ -1644,8 +1644,9 @@ do_client_certify_and_key_exchange(State0, Connection) ->
 
 server_certify_and_key_exchange(State0, Connection) ->
     State1 = certify_server(State0, Connection),
-    State2 = key_exchange(State1, Connection),
-    request_client_cert(State2, Connection).
+    State2 = certificate_status(State1, Connection),
+    State3 = key_exchange(State2, Connection),
+    request_client_cert(State3, Connection).
 
 certify_client_key_exchange(#encrypted_premaster_secret{premaster_secret= EncPMS},
 			    #state{private_key = Key, client_hello_version = {Major, Minor} = Version} = State, Connection) ->
@@ -1732,6 +1733,16 @@ certify_server(#state{cert_db = CertDbHandle,
 	Alert = #alert{} ->
 	    throw(Alert)
     end.
+
+% Don't send certificate_status message if no status_request extension was
+% received in client_hello, or no response is set in ssl_opts
+% TODO
+% certificate_status(#state{hello = #client_hello{extensions = #hello_extensions{status_request = undefined}}} = State, _) ->
+%     State;
+certificate_status(#state{ssl_options = #ssl_options{certificate_status = undefined}} = State, _) ->
+    State;
+certificate_status(#state{ssl_options = #ssl_options{certificate_status = #certificate_status{} = Msg}} = State, Connection) ->
+    Connection:queue_handshake(Msg, State).
 
 key_exchange(#state{role = server, key_algorithm = rsa} = State,_) ->
     State;
@@ -2361,7 +2372,8 @@ map_extensions(#hello_extensions{renegotiation_info = RenegotiationInfo,
                                  srp = SRP,
                                  ec_point_formats = ECPointFmt,
                                  elliptic_curves = ECCCurves,
-                                 sni = SNI}) ->
+                                 sni = SNI,
+                                 status_request = StatusRequest}) ->
     #{renegotiation_info => ssl_handshake:extension_value(RenegotiationInfo),
       signature_algs =>  ssl_handshake:extension_value(SigAlg),
       alpn =>  ssl_handshake:extension_value(Alpn),
@@ -2369,7 +2381,8 @@ map_extensions(#hello_extensions{renegotiation_info = RenegotiationInfo,
       next_protocol => ssl_handshake:extension_value(Next),
       ec_point_formats  => ssl_handshake:extension_value(ECPointFmt),
       elliptic_curves => ssl_handshake:extension_value(ECCCurves),
-      sni => ssl_handshake:extension_value(SNI)}.
+      sni => ssl_handshake:extension_value(SNI),
+      status_request => ssl_handshake:extension_value(StatusRequest)}.
 
 terminate_alert(normal, Version, ConnectionStates, Connection)  ->
     Connection:encode_alert(?ALERT_REC(?WARNING, ?CLOSE_NOTIFY),

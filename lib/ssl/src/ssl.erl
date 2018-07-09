@@ -1550,6 +1550,8 @@ new_ssl_options([{protocol, dtls = Value} | Rest], #ssl_options{} = Opts, dtls_r
     new_ssl_options(Rest, Opts#ssl_options{protocol = Value}, RecordCB);
 new_ssl_options([{protocol, tls = Value} | Rest], #ssl_options{} = Opts, tls_record = RecordCB) -> 
     new_ssl_options(Rest, Opts#ssl_options{protocol = Value}, RecordCB);
+new_ssl_options([{certificate_status, #certificate_status{} = Status} | Rest], #ssl_options{} = Opts, tls_record = RecordCB) -> 
+    new_ssl_options(Rest, Opts#ssl_options{certificate_status = Status}, RecordCB);
 new_ssl_options([{Key, Value} | _Rest], #ssl_options{}, _) -> 
     throw({error, {options, {Key, Value}}}).
 

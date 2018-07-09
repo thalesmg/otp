@@ -146,7 +146,8 @@
 	  honor_ecc_order            :: boolean(),
           max_handshake_size         :: integer(),
           handshake,
-          customize_hostname_check
+          customize_hostname_check,
+	  certificate_status = undefined :: {integer(), binary()} | undefined
          }).
 
 -record(socket_options,
@@ -181,8 +182,3 @@
 				{next_state, state_name(), term(), timeout()} |
 				{stop, term(), term()}.
 -endif. % -ifdef(ssl_internal).
-
-
-
-
-

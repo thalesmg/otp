@@ -42,12 +42,12 @@
 
 -type ssl_handshake() :: #server_hello{} | #server_hello_done{} | #certificate{} | #certificate_request{} |
 			 #client_key_exchange{} | #finished{} | #certificate_verify{} |
-			 #hello_request{} | #next_protocol{}.
+			 #hello_request{} | #next_protocol{} | #certificate_status{}.
 
 %% Create handshake messages
 -export([hello_request/0, server_hello/4, server_hello_done/0,
 	 certificate/4,  client_certificate_verify/6,  certificate_request/5, key_exchange/3,
-	 finished/5,  next_protocol/1]).
+	 finished/5,  next_protocol/1, certificate_status/2]).
 
 %% Handle handshake messages
 -export([certify/7, certificate_verify/6, verify_signature/5,
@@ -324,6 +324,16 @@ finished(Version, Role, PrfAlgo, MasterSecret, {Handshake, _}) -> % use the curr
 %%-------------------------------------------------------------------
 next_protocol(SelectedProtocol) ->
   #next_protocol{selected_protocol = SelectedProtocol}.
+%%--------------------------------------------------------------------
+-spec certificate_status(integer(), binary()) -> #certificate_status{}.
+%%
+%% Description: Creates a certificate_status message, called by the server.
+%%--------------------------------------------------------------------
+certificate_status(StatusType, Response) ->
+  #certificate_status{
+		    status_type = StatusType,
+		    response = Response
+		   }.
 
 %%====================================================================
 %% Handle handshake messages 
@@ -566,7 +576,9 @@ encode_handshake(#certificate_verify{signature = BinSig, hashsign_algorithm = Ha
     EncSig = enc_sign(HashSign, BinSig, Version),
     {?CERTIFICATE_VERIFY, EncSig};
 encode_handshake(#finished{verify_data = VerifyData}, _Version) ->
-    {?FINISHED, VerifyData}.
+    {?FINISHED, VerifyData};
+encode_handshake(#certificate_status{status_type = StatusType, response = Response}, _Version) ->
+    {?CERTIFICATE_STATUS, <<?BYTE(StatusType), Response/binary>>}.
 
 encode_hello_extensions(#hello_extensions{} = Extensions) ->
     encode_hello_extensions(hello_extensions_list(Extensions), <<>>).
@@ -1181,7 +1193,9 @@ extension_value(#next_protocol_negotiation{extension_data = Data}) ->
 extension_value(#srp{username = Name}) ->
     Name;
 extension_value(#renegotiation_info{renegotiated_connection = Data}) ->
-    Data.
+    Data;
+extension_value(#certificate_status_request{status_type = StatusType, request = Request}) ->
+    {StatusType, Request}.
 
 %%--------------------------------------------------------------------
 %%% Internal functions
@@ -1939,6 +1953,14 @@ dec_hello_extensions(<<?UINT16(?SNI_EXT), ?UINT16(Len),
                 ExtData:Len/binary, Rest/binary>>, Acc) ->
     <<?UINT16(_), NameList/binary>> = ExtData,
     dec_hello_extensions(Rest, Acc#hello_extensions{sni = dec_sni(NameList)});
+
+dec_hello_extensions(<<?UINT16(?STATUS_REQUEST_EXT), ?UINT16(Len),
+                ExtData:Len/binary, Rest/binary>>, Acc) ->
+    <<?BYTE(StatusType), Request/binary>> = ExtData,
+    StatusRequest = #certificate_status_request{status_type = StatusType,
+	    					request = Request},
+    dec_hello_extensions(Rest, Acc#hello_extensions{status_request = StatusRequest});
+
 %% Ignore data following the ClientHello (i.e.,
 %% extensions) if not understood.
 
@@ -2474,5 +2496,3 @@ cert_curve(Cert, ECCCurve0, CipherSuite) ->
         _ ->
             {ECCCurve0, CipherSuite}
     end.
-
-   

@@ -79,6 +79,7 @@
 -define(CERTIFICATE_VERIFY, 15).
 -define(CLIENT_KEY_EXCHANGE, 16).
 -define(FINISHED, 20).
+-define(CERTIFICATE_STATUS, 22).
 
 -define(MAX_UNIT24, 8388607).
 -define(DEFAULT_MAX_HANDSHAKE_SIZE,  (256*1024)).
@@ -105,7 +106,8 @@
 	  srp,
 	  ec_point_formats,
 	  elliptic_curves,
-	  sni
+	  sni,
+	  status_request
 	 }).
 
 -record(server_hello, {
@@ -291,6 +293,14 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ %% Certificate status message  RFC 6066 section 8
+ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ -record(certificate_status, {
+ 	  status_type,
+ 	  response % binary()
+ 	 }).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Renegotiation info  RFC 5746 section 3.2
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(RENEGOTIATION_EXT, 16#ff01).
@@ -375,6 +385,20 @@
 
 -record(sni, {
           hostname = undefined
+        }).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Certificate status request RFC 6066 section 8
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(STATUS_REQUEST_EXT, 16#0005).
+
+%% enum { ocsp(1), (255) } CertificateStatusType;
+-define(STATUS_TYPE_OCSP, 1).
+
+-record(certificate_status_request, {
+          status_type = undefined,
+	  request = undefined
         }).
 
 -endif. % -ifdef(ssl_handshake).
