@@ -578,7 +578,8 @@ encode_handshake(#certificate_verify{signature = BinSig, hashsign_algorithm = Ha
 encode_handshake(#finished{verify_data = VerifyData}, _Version) ->
     {?FINISHED, VerifyData};
 encode_handshake(#certificate_status{status_type = StatusType, response = Response}, _Version) ->
-    {?CERTIFICATE_STATUS, <<?BYTE(StatusType), Response/binary>>}.
+    Size = byte_size(Response),
+    {?CERTIFICATE_STATUS, <<?BYTE(StatusType), ?UINT24(Size), Response/binary>>}.
 
 encode_hello_extensions(#hello_extensions{} = Extensions) ->
     encode_hello_extensions(hello_extensions_list(Extensions), <<>>).
