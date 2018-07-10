@@ -107,7 +107,7 @@
 	  ec_point_formats,
 	  elliptic_curves,
 	  sni,
-	  status_request
+	  status_request = undefined
 	 }).
 
 -record(server_hello, {

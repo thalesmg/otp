@@ -645,6 +645,15 @@ encode_hello_extensions([#sni{hostname = Hostname} | Rest], Acc) ->
 				    ?UINT16(ServerNameLength),
 				    ?BYTE(?SNI_NAMETYPE_HOST_NAME),
 				    ?UINT16(HostLen), HostnameBin/binary,
+				    Acc/binary>>);
+encode_hello_extensions([#certificate_status_request{status_type = undefined} | Rest], Acc) ->
+    encode_hello_extensions(Rest, <<?UINT16(?STATUS_REQUEST_EXT), ?UINT16(0),
+				    Acc/binary>>);
+encode_hello_extensions([#certificate_status_request{status_type = StatusType, request = Request} | Rest], Acc) ->
+    RequestLength = byte_size(Request),
+    ExtLength = 1 + RequestLength,
+    encode_hello_extensions(Rest, <<?UINT16(?STATUS_REQUEST_EXT), ?UINT16(ExtLength),
+				    ?BYTE(StatusType), Request/binary,
 				    Acc/binary>>).
 
 encode_client_protocol_negotiation(undefined, _) ->
@@ -971,9 +980,11 @@ handle_client_hello_extensions(RecordCB, Random, ClientCipherSuites,
 						 srp = SRP,
 						 ec_point_formats = ECCFormat,
 						 alpn = ALPN,
-						 next_protocol_negotiation = NextProtocolNegotiation}, Version,
+						 next_protocol_negotiation = NextProtocolNegotiation,
+						 status_request = StatusRequest}, Version,
 			       #ssl_options{secure_renegotiate = SecureRenegotation,
-                                            alpn_preferred_protocols = ALPNPreferredProtocols} = Opts,
+                                            alpn_preferred_protocols = ALPNPreferredProtocols,
+					    certificate_status = CertificateStatus} = Opts,
 			       #session{cipher_suite = NegotiatedCipherSuite,
 					compression_method = Compression} = Session0,
 			       ConnectionStates0, Renegotiation) ->
@@ -983,11 +994,21 @@ handle_client_hello_extensions(RecordCB, Random, ClientCipherSuites,
 						      ClientCipherSuites, Compression,
 						      ConnectionStates0, Renegotiation, SecureRenegotation),
 
-    ServerHelloExtensions =  #hello_extensions{
+    ServerHelloExtensions0 =  #hello_extensions{
 				renegotiation_info = renegotiation_info(RecordCB, server,
 									ConnectionStates, Renegotiation),
 				ec_point_formats = server_ecc_extension(Version, ECCFormat)
 			       },
+
+    %% If we got status_request in client hello, and we intend to send a
+    %% certificate_status message, add an empty status_request to server hello
+    ServerHelloExtensions1 =
+	if
+	    StatusRequest =/= undefined, CertificateStatus =/= undefined ->
+		ServerHelloExtensions0#hello_extensions{status_request = #certificate_status_request{}};
+	    true ->
+		ServerHelloExtensions0
+	end,
 
     %% If we receive an ALPN extension and have ALPN configured for this connection,
     %% we handle it. Otherwise we check for the NPN extension.
@@ -998,12 +1019,12 @@ handle_client_hello_extensions(RecordCB, Random, ClientCipherSuites,
                     Alert;
                 Protocol ->
                     {Session, ConnectionStates, Protocol,
-                        ServerHelloExtensions#hello_extensions{alpn=encode_alpn([Protocol], Renegotiation)}}
+                        ServerHelloExtensions1#hello_extensions{alpn=encode_alpn([Protocol], Renegotiation)}}
             end;
         true ->
             ProtocolsToAdvertise = handle_next_protocol_extension(NextProtocolNegotiation, Renegotiation, Opts),
             {Session, ConnectionStates, undefined,
-				ServerHelloExtensions#hello_extensions{next_protocol_negotiation=
+				ServerHelloExtensions1#hello_extensions{next_protocol_negotiation=
                 	encode_protocols_advertised_on_server(ProtocolsToAdvertise)}}
     end.
 
@@ -1746,9 +1767,10 @@ hello_extensions_list(#hello_extensions{renegotiation_info = RenegotiationInfo,
 					elliptic_curves = EllipticCurves,
                                         alpn = ALPN,
 					next_protocol_negotiation = NextProtocolNegotiation,
-					sni = Sni}) ->
+					sni = Sni,
+					status_request = StatusRequest}) ->
     [Ext || Ext <- [RenegotiationInfo, SRP, HashSigns,
-		    EcPointFormats, EllipticCurves, ALPN, NextProtocolNegotiation, Sni], Ext =/= undefined].
+		    EcPointFormats, EllipticCurves, ALPN, NextProtocolNegotiation, Sni, StatusRequest], Ext =/= undefined].
 
 %%-------------Decode handshakes---------------------------------
 dec_server_key(<<?UINT16(PLen), P:PLen/binary,
