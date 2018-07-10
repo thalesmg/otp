@@ -1734,11 +1734,6 @@ certify_server(#state{cert_db = CertDbHandle,
 	    throw(Alert)
     end.
 
-% Don't send certificate_status message if no status_request extension was
-% received in client_hello, or no response is set in ssl_opts
-% TODO
-% certificate_status(#state{hello = #client_hello{extensions = #hello_extensions{status_request = undefined}}} = State, _) ->
-%     State;
 certificate_status(#state{ssl_options = #ssl_options{certificate_status = undefined}} = State, _) ->
     State;
 certificate_status(#state{ssl_options = #ssl_options{certificate_status = #certificate_status{} = Msg}} = State, Connection) ->

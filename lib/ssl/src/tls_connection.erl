@@ -481,13 +481,20 @@ hello(internal, #client_hello{client_version = ClientVersion} = Hello,
 			   undefined -> CurrentProtocol;
 			   _ -> Protocol0
 		       end,
+	    %% Make sure certificate_status is cleared unless we indicated in
+	    %% the server_hello that we will be sending it
+	    SslOpts1 = case ServerHelloExt#hello_extensions.status_request of
+			   undefined -> SslOpts#ssl_options{certificate_status = undefined};
+			   _ -> SslOpts
+		       end,
             gen_handshake(?FUNCTION_NAME, internal, {common_client_hello, Type, ServerHelloExt},
                           State#state{connection_states  = ConnectionStates,
                                       negotiated_version = Version,
                                       hashsign_algorithm = HashSign,
                                       client_hello_version = ClientVersion,
                                       session = Session,
-                                      negotiated_protocol = Protocol})
+                                      negotiated_protocol = Protocol,
+				      ssl_options = SslOpts1})
     end;
 hello(internal, #server_hello{} = Hello,      
       #state{connection_states = ConnectionStates0,
