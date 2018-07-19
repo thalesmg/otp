@@ -994,21 +994,12 @@ handle_client_hello_extensions(RecordCB, Random, ClientCipherSuites,
 						      ClientCipherSuites, Compression,
 						      ConnectionStates0, Renegotiation, SecureRenegotation),
 
-    ServerHelloExtensions0 =  #hello_extensions{
+    ServerHelloExtensions =  #hello_extensions{
 				renegotiation_info = renegotiation_info(RecordCB, server,
 									ConnectionStates, Renegotiation),
-				ec_point_formats = server_ecc_extension(Version, ECCFormat)
+				ec_point_formats = server_ecc_extension(Version, ECCFormat),
+				status_request = server_status_request_extension(StatusRequest, CertificateStatus)
 			       },
-
-    %% If we got status_request in client hello, and we intend to send a
-    %% certificate_status message, add an empty status_request to server hello
-    ServerHelloExtensions1 =
-	if
-	    StatusRequest =/= undefined, CertificateStatus =/= undefined ->
-		ServerHelloExtensions0#hello_extensions{status_request = #certificate_status_request{}};
-	    true ->
-		ServerHelloExtensions0
-	end,
 
     %% If we receive an ALPN extension and have ALPN configured for this connection,
     %% we handle it. Otherwise we check for the NPN extension.
@@ -1019,12 +1010,12 @@ handle_client_hello_extensions(RecordCB, Random, ClientCipherSuites,
                     Alert;
                 Protocol ->
                     {Session, ConnectionStates, Protocol,
-                        ServerHelloExtensions1#hello_extensions{alpn=encode_alpn([Protocol], Renegotiation)}}
+                        ServerHelloExtensions#hello_extensions{alpn=encode_alpn([Protocol], Renegotiation)}}
             end;
         true ->
             ProtocolsToAdvertise = handle_next_protocol_extension(NextProtocolNegotiation, Renegotiation, Opts),
             {Session, ConnectionStates, undefined,
-				ServerHelloExtensions1#hello_extensions{next_protocol_negotiation=
+				ServerHelloExtensions#hello_extensions{next_protocol_negotiation=
                 	encode_protocols_advertised_on_server(ProtocolsToAdvertise)}}
     end.
 
@@ -2401,6 +2392,16 @@ sni(disable) ->
     undefined;
 sni(Hostname) ->
     #sni{hostname = Hostname}.
+
+%% Indicate support for the status_request extension only if requested and we
+%% have a matching and non-empty CertificateStatus message we can send
+server_status_request_extension(#certificate_status_request{status_type = StatusType},
+				#certificate_status{status_type = StatusType, response = Response})
+  when is_binary(Response),
+       byte_size(Response) > 0 ->
+    #certificate_status_request{};
+server_status_request_extension(_, _) ->
+    undefined.
 
 renegotiation_info(_, client, _, false) ->
     #renegotiation_info{renegotiated_connection = undefined};
