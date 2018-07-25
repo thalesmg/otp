@@ -841,12 +841,20 @@ handle_client_hello(#client_hello{client_version = ClientVersion} = Hello,
 			   _ -> Protocol0
 		       end,
 
+            %% Make sure certificate_status is cleared unless we indicated in
+            %% the server_hello that we will be sending it
+            SslOpts1 = case ServerHelloExt#hello_extensions.status_request of
+                undefined -> SslOpts#ssl_options{certificate_status = undefined};
+                _ -> SslOpts
+            end,
+
 	    State = prepare_flight(State0#state{connection_states = ConnectionStates,
 						negotiated_version = Version,
 						hashsign_algorithm = HashSign,
                                                 client_hello_version = ClientVersion,
 						session = Session,
-						negotiated_protocol = Protocol}),
+						negotiated_protocol = Protocol,
+                                                ssl_options = SslOpts1}),
 	    
 	    ssl_connection:hello(internal, {common_client_hello, Type, ServerHelloExt},
 				 State, ?MODULE)

@@ -959,7 +959,8 @@ handle_options(Opts0, Role, Host) ->
 		    crl_cache = handle_option(crl_cache, Opts, {ssl_crl_cache, {internal, []}}),
                     max_handshake_size = handle_option(max_handshake_size, Opts, ?DEFAULT_MAX_HANDSHAKE_SIZE),
                     handshake = handle_option(handshake, Opts, full),
-                    customize_hostname_check = handle_option(customize_hostname_check, Opts, [])
+                    customize_hostname_check = handle_option(customize_hostname_check, Opts, []),
+		    certificate_status = handle_option(certificate_status, Opts, undefined)
 		   },
 
     CbInfo  = proplists:get_value(cb_info, Opts, default_cb_info(Protocol)),
@@ -975,7 +976,8 @@ handle_options(Opts0, Role, Host) ->
 		  client_preferred_next_protocols, log_alert,
 		  server_name_indication, honor_cipher_order, padding_check, crl_check, crl_cache,
 		  fallback, signature_algs, eccs, honor_ecc_order, beast_mitigation,
-                  max_handshake_size, handshake, customize_hostname_check],
+                  max_handshake_size, handshake, customize_hostname_check,
+		  certificate_status],
     SockOpts = lists:foldl(fun(Key, PropList) ->
 				   proplists:delete(Key, PropList)
 			   end, Opts, SslOptions),
@@ -1219,6 +1221,10 @@ validate_option(handshake, hello = Value) ->
 validate_option(handshake, full = Value) ->
     Value;
 validate_option(customize_hostname_check, Value) when is_list(Value) ->
+    Value;
+validate_option(certificate_status, undefined = Value) ->
+    Value;
+validate_option(certificate_status, #certificate_status{} = Value) ->
     Value;
 validate_option(Opt, Value) ->
     throw({error, {options, {Opt, Value}}}).
@@ -1550,8 +1556,8 @@ new_ssl_options([{protocol, dtls = Value} | Rest], #ssl_options{} = Opts, dtls_r
     new_ssl_options(Rest, Opts#ssl_options{protocol = Value}, RecordCB);
 new_ssl_options([{protocol, tls = Value} | Rest], #ssl_options{} = Opts, tls_record = RecordCB) -> 
     new_ssl_options(Rest, Opts#ssl_options{protocol = Value}, RecordCB);
-new_ssl_options([{certificate_status, #certificate_status{} = Status} | Rest], #ssl_options{} = Opts, tls_record = RecordCB) -> 
-    new_ssl_options(Rest, Opts#ssl_options{certificate_status = Status}, RecordCB);
+new_ssl_options([{certificate_status, Value} | Rest], #ssl_options{} = Opts, RecordCB) ->
+    new_ssl_options(Rest, Opts#ssl_options{certificate_status = validate_option(certificate_status, Value)}, RecordCB);
 new_ssl_options([{Key, Value} | _Rest], #ssl_options{}, _) -> 
     throw({error, {options, {Key, Value}}}).
 

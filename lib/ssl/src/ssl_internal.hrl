@@ -147,7 +147,7 @@
           max_handshake_size         :: integer(),
           handshake,
           customize_hostname_check,
-	  certificate_status = undefined :: {integer(), binary()} | undefined
+	  certificate_status = undefined
          }).
 
 -record(socket_options,
