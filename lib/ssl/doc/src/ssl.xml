@@ -92,6 +92,7 @@
 	<p><c>| {customize_hostname_check, list()}</c></p>
 	<p><c>| {sni_hosts, [{hostname(), [ssl_option()]}]}</c></p>
 	<p><c>| {sni_fun, SNIfun::fun()}</c></p>
+  <p><c>| {certificate_status, #certificate_status{} | undefined}</c></p>
       </item>
       
       <tag><c>transport_option() =</c></tag>
@@ -205,8 +206,9 @@
 		   next_protocol_negotiation,
 		   srp => string() | undefined,
 		   ec_point_formats ,
-		   elliptic_curves = [oid] | undefined
-		   sni = string()} 
+		   elliptic_curves = [oid] | undefined,
+		   sni = string(),
+       status_request = {pos_integer(), binary()} | undefined
        }</c></p></item>
       
 
@@ -849,6 +851,20 @@ fun(srp, Username :: string(), UserState :: term()) ->
       negotiation, introduced in TLS-1.2. The algorithms will also be offered to the client if a
       client certificate is requested. For more details see the <seealso marker="#client_signature_algs">corresponding client option</seealso>.
       </p> </item>
+
+      <tag><c>{certificate_status, #certificate_status{} | undefined}</c></tag>
+      <item><p>Defines the <c>CertificateStatus</c> message that will be sent
+      to clients that included a certificate status request in the <c>ClientHello</c>
+      with a matching <c>response_type</c> value (typically 1, for OCSP).
+      If set to <c>undefined</c> (the default), no <c>CertificateStatus</c>
+      message is sent, regardless of the client's request.</p>
+
+      <p>This option is typically set or updated dynamically during the TLS
+      handshake, rather than statically in the listener options. When using the
+      <c>{handshake, hello}</c> option, the server can inspect the
+      <c>status_request</c> field in the <c>hello_extensions</c> to customize
+      the response according to the client's request.</p>
+      </item>
 
     </taglist>
   </section>
