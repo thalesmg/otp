@@ -100,7 +100,8 @@ all_versions_tests() ->
      ciphers_dsa_signed_certs,
      erlang_client_bad_openssl_server,
      expired_session,
-     ssl2_erlang_server_openssl_client
+     ssl2_erlang_server_openssl_client,
+     erlang_server_openssl_client_ocsp
     ].
 
 dtls_all_versions_tests() ->
@@ -1416,6 +1417,39 @@ erlang_server_openssl_client_sni_no_match(Config) when is_list(Config) ->
 
 erlang_server_openssl_client_sni_no_match_fun(Config) when is_list(Config) ->
     erlang_server_openssl_client_sni_test_sni_fun(Config, "c.server", undefined, "server Peer cert").
+
+%%--------------------------------------------------------------------
+erlang_server_openssl_client_ocsp() ->
+    [{doc,"Test OCSP stapling with openssl client"}].
+erlang_server_openssl_client_ocsp(Config) when is_list(Config) ->
+    process_flag(trap_exit, true),
+    ServerOpts = ssl_test_lib:ssl_options(server_rsa_opts, Config),
+
+    {_, ServerNode, Hostname} = ssl_test_lib:run_where(Config),
+
+    CertStatus = ssl_handshake:certificate_status(1, <<16#01, 16#02, 16#03, 16#04>>),
+
+    Data = "From openssl to erlang",
+
+    Server = ssl_test_lib:start_server([{node, ServerNode}, {port, 0},
+                                         {from, self()},
+                                        {mfa, {?MODULE, erlang_ssl_receive, [Data]}},
+                                        {options, [{certificate_status, CertStatus} | ServerOpts]}]),
+    Port = ssl_test_lib:inet_port(Server),
+    Version = ssl_test_lib:protocol_version(Config),
+
+    Exe = "openssl",
+    Args = ["s_client", "-connect", hostname_format(Hostname) ++":" ++ integer_to_list(Port),
+             "-status",
+             ssl_test_lib:version_flag(Version)],
+
+    OpenSslPort =  ssl_test_lib:portable_open_port(Exe, Args),
+
+    ssl_test_lib:consume_port_exit(OpenSslPort),
+    ssl_test_lib:check_result(Server, {error, {tls_alert, "bad certificate status response"}}),
+
+    ssl_test_lib:close(Server),
+    process_flag(trap_exit, false).
 
 
 %%--------------------------------------------------------------------

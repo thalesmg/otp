@@ -39,6 +39,7 @@ all() -> [decode_hello_handshake,
 	  encode_single_hello_sni_extension_correctly,
 	  decode_single_hello_sni_extension_correctly,
 	  decode_empty_server_sni_correctly,
+	  decode_hello_status_request_extension_correctly,
 	  select_proper_tls_1_2_rsa_default_hashsign,
 	  ignore_hassign_extension_pre_tls_1_2].
 
@@ -152,6 +153,12 @@ decode_empty_server_sni_correctly(_Config) ->
     Exts = #hello_extensions{sni = ""},
     SNI = <<?UINT16(?SNI_EXT),?UINT16(0)>>,
     Decoded = ssl_handshake:decode_hello_extensions(SNI),
+    Exts = Decoded.
+
+decode_hello_status_request_extension_correctly(_Config) ->
+    Exts = #hello_extensions{status_request = #certificate_status_request{status_type = 1, request = <<16#00, 16#00, 16#00, 16#00>>}},
+    StatusRequest = <<16#00, 16#05, 16#00, 16#05, 16#01, 16#00, 16#00, 16#00, 16#00>>,
+    Decoded = ssl_handshake:decode_hello_extensions(StatusRequest),
     Exts = Decoded.
 
 
