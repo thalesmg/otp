@@ -30,7 +30,7 @@
 %% Common Test interface functions -----------------------------------
 %%--------------------------------------------------------------------
 all() -> 
-    [ocsp_test].
+    [ocsp_test, new_ocsp_test].
 
 groups() -> 
     [].
@@ -60,6 +60,135 @@ end_per_testcase(_TestCase, _Config) ->
 %%--------------------------------------------------------------------
 %% Test Cases --------------------------------------------------------
 %%--------------------------------------------------------------------
+new_ocsp_test() ->
+    [{doc, "Proposed test cases for pubkey_ocsp"}].
+new_ocsp_test(Config) when is_list(Config) ->
+    LongTime = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())+15*365),
+    Validity = {date(), LongTime},
+    Subject = [{email, "tester@erlang.org"},
+	       {city, "Stockholm"},
+	       {country, "SE"},
+	       {org, "erlang"},
+	       {org_unit, "testing dep"}],
+
+    % Issuing CA, with OCSP endpoint URL; key usage allows signing OCSP
+    % responses directly
+    AIA = [#'AccessDescription'{accessMethod = ?'id-pkix-ocsp',
+        accessLocation = {uniformResourceIdentifier, "http://ocsp.example.org/responder"}}],
+    IssuerExts = [{basic_constraints, 0},
+        {key_usage, [keyCertSign, digitalSignature]},
+        {?'id-ce-extKeyUsage', [?'id-kp-OCSPSigningPKIX1Implicit88'], true},
+        {?'id-pe-authorityInfoAccess', AIA, false}],
+    Issuer = erl_make_certs:make_cert([
+        {validity, Validity},
+		{subject, [{name, "Server CA"}|Subject]},
+        {extensions, IssuerExts}]),
+
+    % Sample server certificate, to be referenced in queries/responses
+    ServerExts = [{basic_constraints, false}],
+    Server = erl_make_certs:make_cert([
+        {issuer, Issuer},
+        {validity, Validity},
+        {subject, [{name, "some.server.net"}|Subject]},
+        {extensions, ServerExts}]),
+
+    % Dedicated OCSP responder, issued by the CA
+    ResponderExts = [{key_usage, [digitalSignature]},
+        {?'id-ce-extKeyUsage', [?'id-kp-OCSPSigningPKIX1Implicit88'], true}],
+    Responder = erl_make_certs:make_cert([
+        {issuer, Issuer}, {validity, Validity},
+        {subject, [{name, "OSCP Responder"}|Subject]},
+        {extensions, ResponderExts}]),
+
+    % Expired responder
+    Past1 = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())-365),
+    Past2 = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())-1),
+    ExpiredResponder = erl_make_certs:make_cert([
+        {issuer, Issuer},
+        {validity, {Past1, Past2}},
+        {subject, [{name, "OSCP Responder"}|Subject]},
+        {extensions, ResponderExts}]),
+
+    % Responder without necessary key usage / ext. key usage
+    BadResponder = erl_make_certs:make_cert([
+        {issuer, Issuer},
+        {validity, Validity},
+        {subject, [{name, "OSCP Responder"}|Subject]}]),
+
+    % Self-signed responder, testing the case where no valid chain to the
+    % issuer exists
+    SelfSignedResponder = erl_make_certs:make_cert([
+        {validity, Validity},
+        {subject, [{name, "OSCP Responder"}|Subject]},
+        {extensions, ResponderExts}]),
+
+    % Fake responder, testing the case where the responder appears to be issued
+    % by the correct issuer, but the signature is invalid
+    {_, OtherPrivateKey} = erl_make_certs:gen_rsa(64),
+    BadIssuer = {element(1, Issuer), OtherPrivateKey},
+    FakeResponder = erl_make_certs:make_cert([
+        {issuer, BadIssuer},
+        {validity, Validity},
+        {subject, [{name, "OSCP Responder"}|Subject]},
+        {extensions, ResponderExts}]),
+
+    IssuerCert = element(1, Server),
+    CertID = cert_id(IssuerCert, element(1, Issuer)),
+    Nonce = <<226,210,104,247,153,233,71,246>>,
+
+    ct:pal("Check pubkey_ocsp:verify_ocsp_response/3~n"),
+    OcspResponse1 = ocsp_response(CertID, good, Nonce, Responder),
+    {ok, [#'SingleResponse'{}]} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse1, IssuerCert, Nonce),
+
+    % This test fails because verify_ocsp_response/3 expects the second
+    % argument to be a list of certificates:
+    % OcspResponse2 = ocsp_response(CertID, good, Nonce, Issuer, [{certs, []}]),
+    % {ok, [#'SingleResponse'{}]} =
+    %     pubkey_ocsp:verify_ocsp_response(OcspResponse2, IssuerCert, Nonce),
+
+    {error, nonce_mismatch} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse1, IssuerCert, <<1,2,3>>),
+
+    {ResponderCert, _} = Responder,
+    {_, BadPrivateKey} = erl_make_certs:gen_rsa(64),
+    OcspResponse3 = ocsp_response(CertID, good, Nonce, {ResponderCert, BadPrivateKey}),
+    {error, ocsp_response_bad_signature} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse3, IssuerCert, Nonce),
+
+    % This test fails because verify_ocsp_response/3 expects the second
+    % argument to be a list of certificates:
+    % OcspResponse4 = ocsp_response(CertID, good, Nonce, Responder, [{certs, []}]),
+    % {error, ocsp_response_bad_responder} =
+    %     pubkey_ocsp:verify_ocsp_response(OcspResponse4, IssuerCert, Nonce),
+
+    % This test fails because verify_ocsp_response/3 does not check the
+    % responder validity:
+    % OcspResponse5 = ocsp_response(CertID, good, Nonce, ExpiredResponder),
+    % {error, ocsp_response_bad_responder} =
+    %     pubkey_ocsp:verify_ocsp_response(OcspResponse5, IssuerCert, Nonce),
+
+    % This test fails because verify_ocsp_response/3 does not check the
+    % key usage and extended key usage extensions of the responder:
+    % OcspResponse6 = ocsp_response(CertID, good, Nonce, BadResponder),
+    % {error, ocsp_response_bad_responder} =
+    %     pubkey_ocsp:verify_ocsp_response(OcspResponse6, IssuerCert, Nonce),
+
+    % This test fails because verify_ocsp_response/3 does not check if the
+    % issuer of the responder certificate matches the expected issuer:
+    % OcspResponse7 = ocsp_response(CertID, good, Nonce, SelfSignedResponder),
+    % {error, ocsp_response_bad_responder} =
+    %     pubkey_ocsp:verify_ocsp_response(OcspResponse7, IssuerCert, Nonce),
+
+    % This test fails because verify_ocsp_response/3 does not check if the
+    % responder certificate included in the response was signed by the
+    % issuer:
+    % OcspResponse8 = ocsp_response(CertID, good, Nonce, FakeResponder),
+    % {error, ocsp_response_bad_responder} =
+    %     pubkey_ocsp:verify_ocsp_response(OcspResponse8, IssuerCert, Nonce),
+
+    ct:pal("pubkey_ocsp:verify_ocsp_response/3...ok~n").
+
 ocsp_test() ->
     [{doc, "Test functions in pubkey_ocsp"}].
 ocsp_test(Config) when is_list(Config) ->
@@ -374,3 +503,72 @@ ocsp_test(Config) when is_list(Config) ->
     NonceExtension =
         pubkey_ocsp:get_nonce_extn(Nonce),
     ct:pal("pubkey_ocsp:get_nonce_extn/1...ok~n").
+
+%%
+%% Candidate for moving into pubkey_ocsp?
+%%
+
+cert_id(Cert, IssuerCert) when is_binary(Cert) ->
+    cert_id(public_key:der_decode('Certificate', Cert), IssuerCert);
+
+cert_id(Cert, IssuerCert) when is_binary(IssuerCert) ->
+    cert_id(Cert, public_key:der_decode('Certificate', IssuerCert));
+
+cert_id(#'Certificate'{tbsCertificate = TBSCert},
+        #'Certificate'{tbsCertificate = IssuerTBSCert}) ->
+    {rdnSequence, IssuerName} = IssuerTBSCert#'TBSCertificate'.subject,
+    IssuerNameDer = public_key:der_encode('RDNSequence', IssuerName),
+    #'SubjectPublicKeyInfo'{
+        subjectPublicKey = SubjectPublicKey
+    } = IssuerTBSCert#'TBSCertificate'.subjectPublicKeyInfo,
+    % TODO: support SHA2
+    #'CertID'{hashAlgorithm = #'AlgorithmIdentifier'{algorithm = ?'id-sha1', parameters = <<5, 0>>},
+              issuerNameHash = crypto:hash(sha, IssuerNameDer),
+              issuerKeyHash = crypto:hash(sha, SubjectPublicKey),
+              serialNumber = TBSCert#'TBSCertificate'.serialNumber}.
+
+%
+% Helpers
+%
+
+ocsp_response(CertID, Status, Nonce, {ResponderDer, ResponderKey}) ->
+    ocsp_response(CertID, Status, Nonce, {ResponderDer, ResponderKey}, []).
+
+ocsp_response(CertID, Status, Nonce, {ResponderDer, ResponderKey}, Opts) ->
+    ResponderCert = public_key:pkix_decode_cert(ResponderDer, plain),
+    PrivateKey = public_key:pem_entry_decode(ResponderKey),
+    #'Certificate'{tbsCertificate = TBSCertificate} = ResponderCert,
+    #'SubjectPublicKeyInfo'{
+        subjectPublicKey = SubjectPublicKey
+    } = TBSCertificate#'TBSCertificate'.subjectPublicKeyInfo,
+    ResponderKeyHash = crypto:hash(sha, SubjectPublicKey),
+
+    SingleResponse = #'SingleResponse'{
+        certID = CertID,
+        certStatus = {Status, 'NULL'},
+        thisUpdate = "20200428083205Z",
+        nextUpdate = asn1_NOVALUE},
+    NonceExtension = #'Extension'{
+        extnID    = ?'id-pkix-ocsp-nonce',
+        extnValue = Nonce
+    },
+    ResponseData = #'ResponseData'{
+        responderID = {byKey, ResponderKeyHash},
+        producedAt = "20200428083205Z",
+        responses = [SingleResponse],
+        responseExtensions = [NonceExtension]
+    },
+    TBSResponseData = public_key:der_encode('ResponseData', ResponseData),
+    Certs = proplists:get_value(certs, Opts, [ResponderCert]),
+    BasicOCSPResponse = #'BasicOCSPResponse'{
+        tbsResponseData = ResponseData,
+        signatureAlgorithm = #'AlgorithmIdentifier'{algorithm = ?'sha256WithRSAEncryption', parameters = <<5, 0>>},
+        signature = public_key:sign(TBSResponseData, sha256, PrivateKey),
+        certs = Certs
+    },
+    BasicOCSPResponseDer = public_key:der_encode('BasicOCSPResponse', BasicOCSPResponse),
+    OCSPResponse = #'OCSPResponse'{
+        responseStatus = successful,
+        responseBytes = #'ResponseBytes'{responseType = ?'id-pkix-ocsp-basic',
+            response = BasicOCSPResponseDer}},
+    public_key:der_encode('OCSPResponse', OCSPResponse).

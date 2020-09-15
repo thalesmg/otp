@@ -260,7 +260,10 @@ default_extensions(Exts) ->
 	   {auth_key_id, undefined},
 	   {subject_key_id, undefined},
 	   {policy_mapping, undefined}],
-    Filter = fun({Key, _}, D) -> lists:keydelete(Key, 1, D) end,
+    Filter = fun
+        ({Key, _}, D) -> lists:keydelete(Key, 1, D);
+        ({_, _, _}, D) -> D
+    end,
     Exts ++ lists:foldl(Filter, Def, Exts).
        	
 extension({_, undefined}) -> [];
@@ -285,6 +288,10 @@ extension({basic_constraints, Data}) ->
 extension({key_usage, default}) ->
     #'Extension'{extnID = ?'id-ce-keyUsage',
 		 extnValue = [keyCertSign], critical = true};
+
+extension({key_usage, KeyUsage}) ->
+    #'Extension'{extnID = ?'id-ce-keyUsage',
+		 extnValue = KeyUsage, critical = true};
 
 extension({Id, Data, Critical}) ->
     #'Extension'{extnID = Id, extnValue = Data, critical = Critical}.
