@@ -23,7 +23,6 @@
 -include("public_key.hrl").
 
 -export([otp_cert/1,
-         get_ocsp_responder_id/1,
          get_nonce_extn/1,
          decode_ocsp_response/1,
          verify_ocsp_response/3,
@@ -44,10 +43,12 @@ ocsp_status({revoked, Reason}) ->
 %%
 %% Description: Verify the OCSP response to get the certificate status
 %%--------------------------------------------------------------------
-verify_ocsp_response(OCSPResponseDer, ResponderCerts, Nonce) ->
+verify_ocsp_response(OCSPResponseDer, #'OTPCertificate'{} = IssuerCert, Nonce) ->
     do_verify_ocsp_response(
-        decode_ocsp_response(OCSPResponseDer), ResponderCerts, Nonce
-    ).
+        decode_ocsp_response(OCSPResponseDer), IssuerCert, Nonce
+    );
+verify_ocsp_response(OCSPResponseDer, IssuerCert, Nonce) ->
+    verify_ocsp_response(OCSPResponseDer, otp_cert(IssuerCert), Nonce).
 
 %%--------------------------------------------------------------------
 -spec do_verify_ocsp_response({ok, #'BasicOCSPResponse'{}} | {error, term()},
@@ -62,7 +63,7 @@ do_verify_ocsp_response(
         signatureAlgorithm = SignatureAlgo,
         signature = Signature,
         certs = Certs
-    }}, ResponderCerts, Nonce) ->
+    }}, IssuerCert, Nonce) ->
 
     #'ResponseData'{
         responderID = ResponderID
@@ -71,14 +72,14 @@ do_verify_ocsp_response(
     case verify_ocsp_signature(
         public_key:der_encode('ResponseData', ResponseData),
         SignatureAlgo#'AlgorithmIdentifier'.algorithm,
-        Signature, Certs ++ ResponderCerts,
+        Signature, IssuerCert, Certs,
         ResponderID) of
         ok ->
             verify_ocsp_nonce(ResponseData, Nonce);
         {error, Reason} ->
             {error, Reason}
     end;
-do_verify_ocsp_response({error, Reason}, _ResponderCerts, _Nonce) ->
+do_verify_ocsp_response({error, Reason}, _IssuerCert, _Nonce) ->
     {error, Reason}.
 
 %%--------------------------------------------------------------------
@@ -150,69 +151,82 @@ decode_response_bytes(#'ResponseBytes'{responseType = RespType}) ->
     {error, {ocsp_response_type_not_supported, RespType}}.
 
 %%--------------------------------------------------------------------
--spec verify_ocsp_signature(binary(), term(), term(), list(), term()) ->
+-spec verify_ocsp_signature(binary(), term(), term(), term(), list(), term()) ->
     ok | {error, term()}.
 %%
 %% Description: Verify the signature of OCSP response
 %%--------------------------------------------------------------------
 verify_ocsp_signature(
-    ResponseDataDer, SignatureAlgo, Signature, Certs, ResponderID) ->
-    case find_responder_cert(ResponderID, Certs) of
-        {ok, Cert} ->
+    ResponseDataDer, SignatureAlgo, Signature, IssuerCert, Certs, ResponderID) ->
+    case find_responder_cert(ResponderID, [IssuerCert | Certs]) of
+        {ok, IssuerCert} ->
             do_verify_ocsp_signature(
-                ResponseDataDer, Signature, SignatureAlgo, Cert);
+                ResponseDataDer, Signature, SignatureAlgo, IssuerCert);
+        {ok, Cert} ->
+            case verify_designated_responder(Cert, IssuerCert) of
+                ok ->
+                    do_verify_ocsp_signature(
+                        ResponseDataDer, Signature, SignatureAlgo, Cert);
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
 
 %%--------------------------------------------------------------------
 -spec find_responder_cert(term(), list()) ->
-    {ok, #'Certificate'{} | #'OTPCertificate'{}} | {error, term()}.
+    {ok, #'OTPCertificate'{}} | {error, term()}.
 %%
 %% Description: Find the OCSP responder's cert in input list
 %%--------------------------------------------------------------------
 find_responder_cert(_ResponderID, []) ->
     {error, ocsp_responder_cert_not_found};
-find_responder_cert(ResponderID, [Cert | TCerts]) ->
+find_responder_cert(ResponderID, [#'OTPCertificate'{} = Cert | TCerts]) ->
     case is_responder(ResponderID, Cert) of
         true ->
             {ok, Cert};
         false ->
             find_responder_cert(ResponderID, TCerts)
-    end.
+    end;
+find_responder_cert(ResponderID, [Cert | TCerts]) ->
+    find_responder_cert(ResponderID, [otp_cert(Cert) | TCerts]).
 
 %%--------------------------------------------------------------------
 -spec do_verify_ocsp_signature(
-        binary(), term(), term(), #'Certificate'{} | #'OTPCertificate'{}) ->
+        binary(), term(), term(), #'OTPCertificate'{}) ->
     ok | {error, term()}.
 %%
 %% Description: Verify the signature of OCSP response
 %%--------------------------------------------------------------------
 do_verify_ocsp_signature(ResponseDataDer, Signature, AlgorithmID, Cert) ->
-    {DigestType, _SignatureType} = public_key:pkix_sign_types(AlgorithmID),
-    case public_key:verify(
-             ResponseDataDer, DigestType, Signature,
-             get_public_key_rec(Cert)) of
+    case verify_key_usage(Cert) of
         true ->
-            ok;
+            {DigestType, _SignatureType} = public_key:pkix_sign_types(AlgorithmID),
+            case public_key:verify(
+                    ResponseDataDer, DigestType, Signature,
+                    get_public_key_rec(Cert)) of
+                true ->
+                    ok;
+                false ->
+                    {error, ocsp_response_bad_signature}
+            end;
         false ->
-            {error, ocsp_response_bad_signature}
+            {error, ocsp_response_bad_responder}
     end.
 
 %%--------------------------------------------------------------------
--spec get_public_key_rec(#'Certificate'{} | #'OTPCertificate'{}) ->
+-spec get_public_key_rec(#'OTPCertificate'{}) ->
     term().
 %%
 %% Description: Get the subject public key field
 %%--------------------------------------------------------------------
-get_public_key_rec(#'Certificate'{} = Cert) ->
-    get_public_key_rec(otp_cert(Cert));
 get_public_key_rec(#'OTPCertificate'{tbsCertificate = TbsCert}) ->
     PKInfo = TbsCert#'OTPTBSCertificate'.subjectPublicKeyInfo,
     PKInfo#'OTPSubjectPublicKeyInfo'.subjectPublicKey.
 
 %%--------------------------------------------------------------------
--spec is_responder(tuple(), #'Certificate'{} | #'OTPCertificate'{}) ->
+-spec is_responder(tuple(), #'OTPCertificate'{}) ->
     boolean().
 %%
 %% Description: Check if is OCSP responder's cert
@@ -221,6 +235,47 @@ is_responder({byName, Name}, Cert) ->
     public_key:der_encode('Name', Name) == get_subject_name(Cert);
 is_responder({byKey, Key}, Cert) ->
     Key == crypto:hash(sha, get_public_key(Cert)).
+
+verify_designated_responder(#'OTPCertificate'{tbsCertificate = TbsCert} = Cert,
+        #'OTPCertificate'{tbsCertificate = IssuerTbsCert} = IssuerCert) ->
+    case public_key:pkix_is_issuer(Cert, IssuerCert) of
+        true ->
+            CertDer = public_key:pkix_encode('OTPCertificate', Cert, otp),
+            PKInfo = IssuerTbsCert#'OTPTBSCertificate'.subjectPublicKeyInfo,
+            case public_key:pkix_verify(CertDer, PKInfo#'OTPSubjectPublicKeyInfo'.subjectPublicKey) of
+                true ->
+                    {'Validity', NotBeforeStr, NotAfterStr} = TbsCert#'OTPTBSCertificate'.validity,
+                    Now = calendar:datetime_to_gregorian_seconds(calendar:universal_time()),
+                    NotBefore = pubkey_cert:time_str_2_gregorian_sec(NotBeforeStr),
+                    NotAfter = pubkey_cert:time_str_2_gregorian_sec(NotAfterStr),
+                    case ((NotBefore =< Now) and (Now =< NotAfter)) of
+                        true -> ok;
+                        false -> {error, ocsp_response_bad_responder}
+                    end;
+                false -> {error, ocsp_response_bad_responder}
+            end;
+
+        false ->
+            {error, ocsp_response_bad_responder}
+    end.
+
+verify_key_usage(#'OTPCertificate'{tbsCertificate=#'OTPTBSCertificate'{extensions=Extensions}}) ->
+    key_usage_includes(Extensions, digitalSignature) andalso
+        ext_key_usage_includes(Extensions, ?'id-kp-OCSPSigningOCSP-2013-88').
+
+key_usage_includes(Extensions, Value) ->
+    case pubkey_cert:select_extension(?'id-ce-keyUsage', Extensions) of
+        #'Extension'{extnValue = KeyUsage} ->
+            lists:member(Value, KeyUsage);
+        _ -> false
+    end.
+
+ext_key_usage_includes(Extensions, Value) ->
+    case pubkey_cert:select_extension(?'id-ce-extKeyUsage', Extensions) of
+        #'Extension'{extnValue = ExtKeyUsage} ->
+            lists:member(Value, ExtKeyUsage);
+        _ -> false
+    end.
 
 %%--------------------------------------------------------------------
 -spec otp_cert(#'Certificate'{} | #'OTPCertificate'{} | binary()) ->
@@ -237,31 +292,18 @@ otp_cert(CertDer) when is_binary(CertDer) ->
     public_key:pkix_decode_cert(CertDer, otp).
 
 %%--------------------------------------------------------------------
--spec get_ocsp_responder_id(#'Certificate'{}) -> binary().
-%%
-%% Description: Get the OCSP responder ID der
-%%--------------------------------------------------------------------
-get_ocsp_responder_id(#'Certificate'{tbsCertificate = TbsCert}) ->
-    public_key:der_encode(
-        'ResponderID', {byName, TbsCert#'TBSCertificate'.subject}).
-
-%%--------------------------------------------------------------------
--spec get_subject_name(#'Certificate'{} | #'OTPCertificate'{}) -> binary().
+-spec get_subject_name(#'OTPCertificate'{}) -> binary().
 %%
 %% Description: Get the subject der from cert
 %%--------------------------------------------------------------------
-get_subject_name(#'Certificate'{} = Cert) ->
-    get_subject_name(otp_cert(Cert));
 get_subject_name(#'OTPCertificate'{tbsCertificate = TbsCert}) ->
     public_key:pkix_encode('Name', TbsCert#'OTPTBSCertificate'.subject, otp).
 
 %%--------------------------------------------------------------------
--spec get_public_key(#'Certificate'{} | #'OTPCertificate'{}) -> binary().
+-spec get_public_key(#'OTPCertificate'{}) -> binary().
 %%
 %% Description: Get the public key from cert
 %%--------------------------------------------------------------------
-get_public_key(#'Certificate'{} = Cert) ->
-    get_public_key(otp_cert(Cert));
 get_public_key(#'OTPCertificate'{tbsCertificate = TbsCert}) ->
     PKInfo = TbsCert#'OTPTBSCertificate'.subjectPublicKeyInfo,
     enc_pub_key(PKInfo#'OTPSubjectPublicKeyInfo'.subjectPublicKey).

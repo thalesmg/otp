@@ -64,7 +64,7 @@
 	 short_name_hash/1,
          pkix_test_data/1,
          pkix_test_root_cert/2,
-         pkix_ocsp_validate/5,
+         pkix_ocsp_validate/4,
          ocsp_responder_id/1,
          ocsp_extensions/1
 	]).
@@ -1280,22 +1280,21 @@ pkix_test_root_cert(Name, Opts) ->
       
 %%--------------------------------------------------------------------
 -spec pkix_ocsp_validate(Cert, IssuerCert, OcspRespDer, 
-                         ResponderCerts, NonceExt) -> valid | {bad_cert, Reason}
+                         NonceExt) -> valid | {bad_cert, Reason}
               when Cert::der_encoded() | #'OTPCertificate'{},
                    IssuerCert::der_encoded() | #'OTPCertificate'{}, 
                    OcspRespDer::der_encoded(),
-                   ResponderCerts::[der_encoded()],
                    NonceExt::undefined | binary(),
                    Reason::term().
 
 %% Description: Validate OCSP staple response
 %%--------------------------------------------------------------------
-pkix_ocsp_validate(DerCert, IssuerCert, OcspRespDer, ResponderCerts, NonceExt) when is_binary(DerCert) ->
-    pkix_ocsp_validate(pkix_decode_cert(DerCert, otp),  IssuerCert, OcspRespDer, ResponderCerts, NonceExt);
-pkix_ocsp_validate(Cert, DerIssuerCert, OcspRespDer, ResponderCerts, NonceExt) when is_binary(DerIssuerCert) ->
-    pkix_ocsp_validate(Cert, pkix_decode_cert(DerIssuerCert, otp), OcspRespDer, ResponderCerts, NonceExt);
-pkix_ocsp_validate(Cert, IssuerCert, OcspRespDer, ResponderCerts, NonceExt) ->
-    case  ocsp_responses(OcspRespDer, ResponderCerts, NonceExt) of
+pkix_ocsp_validate(DerCert, IssuerCert, OcspRespDer, NonceExt) when is_binary(DerCert) ->
+    pkix_ocsp_validate(pkix_decode_cert(DerCert, otp),  IssuerCert, OcspRespDer, NonceExt);
+pkix_ocsp_validate(Cert, DerIssuerCert, OcspRespDer, NonceExt) when is_binary(DerIssuerCert) ->
+    pkix_ocsp_validate(Cert, pkix_decode_cert(DerIssuerCert, otp), OcspRespDer, NonceExt);
+pkix_ocsp_validate(Cert, IssuerCert, OcspRespDer, NonceExt) ->
+    case  ocsp_responses(OcspRespDer, IssuerCert, NonceExt) of
         {ok, Responses} ->
             ocsp_status(Cert, IssuerCert, Responses);
         {error, Reason} ->
@@ -1889,6 +1888,6 @@ ocsp_status(Cert, IssuerCert, Responses) ->
             {bad_cert, {revocation_status_undetermined, Reason}}
     end.
 
-ocsp_responses(OCSPResponseDer, ResponderCerts, Nonce) ->
+ocsp_responses(OCSPResponseDer, IssuerCert, Nonce) ->
     pubkey_ocsp:verify_ocsp_response(OCSPResponseDer, 
-                                     ResponderCerts, Nonce).
+                                     IssuerCert, Nonce).

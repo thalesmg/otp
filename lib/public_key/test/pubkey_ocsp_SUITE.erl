@@ -30,7 +30,7 @@
 %% Common Test interface functions -----------------------------------
 %%--------------------------------------------------------------------
 all() -> 
-    [ocsp_test, new_ocsp_test].
+    [ocsp_test, verify_ocsp_response_test].
 
 groups() -> 
     [].
@@ -60,9 +60,9 @@ end_per_testcase(_TestCase, _Config) ->
 %%--------------------------------------------------------------------
 %% Test Cases --------------------------------------------------------
 %%--------------------------------------------------------------------
-new_ocsp_test() ->
-    [{doc, "Proposed test cases for pubkey_ocsp"}].
-new_ocsp_test(Config) when is_list(Config) ->
+verify_ocsp_response_test() ->
+    [{doc, "Test pubkey_ocsp:verify_ocsp_response/3"}].
+verify_ocsp_response_test(Config) when is_list(Config) ->
     LongTime = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())+15*365),
     Validity = {date(), LongTime},
     Subject = [{email, "tester@erlang.org"},
@@ -101,25 +101,25 @@ new_ocsp_test(Config) when is_list(Config) ->
         {extensions, ResponderExts}]),
 
     % Expired responder
-    Past1 = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())-365),
-    Past2 = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())-1),
+    NotBefore = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())-365),
+    NotAfter = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days(date())-1),
     ExpiredResponder = erl_make_certs:make_cert([
         {issuer, Issuer},
-        {validity, {Past1, Past2}},
-        {subject, [{name, "OSCP Responder"}|Subject]},
+        {validity, {NotBefore, NotAfter}},
+        {subject, [{name, "OSCP Responder (expired)"}|Subject]},
         {extensions, ResponderExts}]),
 
     % Responder without necessary key usage / ext. key usage
     BadResponder = erl_make_certs:make_cert([
         {issuer, Issuer},
         {validity, Validity},
-        {subject, [{name, "OSCP Responder"}|Subject]}]),
+        {subject, [{name, "OSCP Responder (no OCSP key usage)"}|Subject]}]),
 
     % Self-signed responder, testing the case where no valid chain to the
     % issuer exists
     SelfSignedResponder = erl_make_certs:make_cert([
         {validity, Validity},
-        {subject, [{name, "OSCP Responder"}|Subject]},
+        {subject, [{name, "OSCP Responder (self signed)"}|Subject]},
         {extensions, ResponderExts}]),
 
     % Fake responder, testing the case where the responder appears to be issued
@@ -129,10 +129,10 @@ new_ocsp_test(Config) when is_list(Config) ->
     FakeResponder = erl_make_certs:make_cert([
         {issuer, BadIssuer},
         {validity, Validity},
-        {subject, [{name, "OSCP Responder"}|Subject]},
+        {subject, [{name, "OSCP Responder (wrong signature)"}|Subject]},
         {extensions, ResponderExts}]),
 
-    IssuerCert = element(1, Server),
+    IssuerCert = element(1, Issuer),
     CertID = cert_id(IssuerCert, element(1, Issuer)),
     Nonce = <<226,210,104,247,153,233,71,246>>,
 
@@ -141,11 +141,9 @@ new_ocsp_test(Config) when is_list(Config) ->
     {ok, [#'SingleResponse'{}]} =
         pubkey_ocsp:verify_ocsp_response(OcspResponse1, IssuerCert, Nonce),
 
-    % This test fails because verify_ocsp_response/3 expects the second
-    % argument to be a list of certificates:
-    % OcspResponse2 = ocsp_response(CertID, good, Nonce, Issuer, [{certs, []}]),
-    % {ok, [#'SingleResponse'{}]} =
-    %     pubkey_ocsp:verify_ocsp_response(OcspResponse2, IssuerCert, Nonce),
+    OcspResponse2 = ocsp_response(CertID, good, Nonce, Issuer, [{certs, []}]),
+    {ok, [#'SingleResponse'{}]} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse2, IssuerCert, Nonce),
 
     {error, nonce_mismatch} =
         pubkey_ocsp:verify_ocsp_response(OcspResponse1, IssuerCert, <<1,2,3>>),
@@ -156,41 +154,30 @@ new_ocsp_test(Config) when is_list(Config) ->
     {error, ocsp_response_bad_signature} =
         pubkey_ocsp:verify_ocsp_response(OcspResponse3, IssuerCert, Nonce),
 
-    % This test fails because verify_ocsp_response/3 expects the second
-    % argument to be a list of certificates:
-    % OcspResponse4 = ocsp_response(CertID, good, Nonce, Responder, [{certs, []}]),
-    % {error, ocsp_response_bad_responder} =
-    %     pubkey_ocsp:verify_ocsp_response(OcspResponse4, IssuerCert, Nonce),
+    OcspResponse4 = ocsp_response(CertID, good, Nonce, Responder, [{certs, []}]),
+    {error, ocsp_responder_cert_not_found} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse4, IssuerCert, Nonce),
 
-    % This test fails because verify_ocsp_response/3 does not check the
-    % responder validity:
-    % OcspResponse5 = ocsp_response(CertID, good, Nonce, ExpiredResponder),
-    % {error, ocsp_response_bad_responder} =
-    %     pubkey_ocsp:verify_ocsp_response(OcspResponse5, IssuerCert, Nonce),
+    OcspResponse5 = ocsp_response(CertID, good, Nonce, ExpiredResponder),
+    {error, ocsp_response_bad_responder} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse5, IssuerCert, Nonce),
 
-    % This test fails because verify_ocsp_response/3 does not check the
-    % key usage and extended key usage extensions of the responder:
-    % OcspResponse6 = ocsp_response(CertID, good, Nonce, BadResponder),
-    % {error, ocsp_response_bad_responder} =
-    %     pubkey_ocsp:verify_ocsp_response(OcspResponse6, IssuerCert, Nonce),
+    OcspResponse6 = ocsp_response(CertID, good, Nonce, BadResponder),
+    {error, ocsp_response_bad_responder} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse6, IssuerCert, Nonce),
 
-    % This test fails because verify_ocsp_response/3 does not check if the
-    % issuer of the responder certificate matches the expected issuer:
-    % OcspResponse7 = ocsp_response(CertID, good, Nonce, SelfSignedResponder),
-    % {error, ocsp_response_bad_responder} =
-    %     pubkey_ocsp:verify_ocsp_response(OcspResponse7, IssuerCert, Nonce),
+    OcspResponse7 = ocsp_response(CertID, good, Nonce, SelfSignedResponder),
+    {error, ocsp_response_bad_responder} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse7, IssuerCert, Nonce),
 
-    % This test fails because verify_ocsp_response/3 does not check if the
-    % responder certificate included in the response was signed by the
-    % issuer:
-    % OcspResponse8 = ocsp_response(CertID, good, Nonce, FakeResponder),
-    % {error, ocsp_response_bad_responder} =
-    %     pubkey_ocsp:verify_ocsp_response(OcspResponse8, IssuerCert, Nonce),
+    OcspResponse8 = ocsp_response(CertID, good, Nonce, FakeResponder),
+    {error, ocsp_response_bad_responder} =
+        pubkey_ocsp:verify_ocsp_response(OcspResponse8, IssuerCert, Nonce),
 
     ct:pal("pubkey_ocsp:verify_ocsp_response/3...ok~n").
 
 ocsp_test() ->
-    [{doc, "Test functions in pubkey_ocsp"}].
+    [{doc, "Test other functions in pubkey_ocsp"}].
 ocsp_test(Config) when is_list(Config) ->
     %% Feeding data
     SingleResponseGood =
@@ -478,24 +465,19 @@ ocsp_test(Config) when is_list(Config) ->
     122,111,22,117,115,166,64,143,10,40,13,5,240,22,38,235,32,107,194,41>>},
 
     %% test of the exported functions
-    ct:pal("Check pubkey_ocsp:verify_ocsp_response/3~n"),
-    {ok, SingleResponseGood} =
-        pubkey_ocsp:verify_ocsp_response(OCSPResponseDer, [Cert], Nonce),
-    {error, ocsp_response_bad_signature} =
-        pubkey_ocsp:verify_ocsp_response(MalOCSPResponseDer, [Cert], Nonce),
-    {error, nonce_mismatch} =
-        pubkey_ocsp:verify_ocsp_response(OCSPResponseDer, [Cert], <<1,2,3>>),
-    ct:pal("pubkey_ocsp:verify_ocsp_response/3...ok~n"),
+    % ct:pal("Check pubkey_ocsp:verify_ocsp_response/3~n"),
+    % {ok, SingleResponseGood} =
+    %     pubkey_ocsp:verify_ocsp_response(OCSPResponseDer, [Cert], Nonce),
+    % {error, ocsp_response_bad_signature} =
+    %     pubkey_ocsp:verify_ocsp_response(MalOCSPResponseDer, [Cert], Nonce),
+    % {error, nonce_mismatch} =
+    %     pubkey_ocsp:verify_ocsp_response(OCSPResponseDer, [Cert], <<1,2,3>>),
+    % ct:pal("pubkey_ocsp:verify_ocsp_response/3...ok~n"),
 
     ct:pal("Check pubkey_ocsp:decode_ocsp_response/1~n"),
     {ok, #'BasicOCSPResponse'{}} =
         pubkey_ocsp:decode_ocsp_response(OCSPResponseDer),
     ct:pal("pubkey_ocsp:decode_ocsp_response/1...ok~n"),
-
-    ct:pal("Check pubkey_ocsp:get_ocsp_responder_id/1~n"),
-    ResponderIDer =
-        pubkey_ocsp:get_ocsp_responder_id(Cert),
-    ct:pal("pubkey_ocsp:get_ocsp_responder_id/1...ok~n"),
 
     ct:pal("Check pubkey_ocsp:get_nonce_extn/1~n"),
     undefined =
