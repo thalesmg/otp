@@ -238,7 +238,7 @@ is_responder({byKey, Key}, Cert) ->
 
 verify_designated_responder(#'OTPCertificate'{tbsCertificate = TbsCert} = Cert,
         #'OTPCertificate'{tbsCertificate = IssuerTbsCert} = IssuerCert) ->
-    case public_key:pkix_is_issuer(Cert, IssuerCert) of
+    case public_key:pkix_is_issuer(Cert, IssuerCert) andalso verify_ext_key_usage(Cert) of
         true ->
             CertDer = public_key:pkix_encode('OTPCertificate', Cert, otp),
             PKInfo = IssuerTbsCert#'OTPTBSCertificate'.subjectPublicKeyInfo,
@@ -260,8 +260,7 @@ verify_designated_responder(#'OTPCertificate'{tbsCertificate = TbsCert} = Cert,
     end.
 
 verify_key_usage(#'OTPCertificate'{tbsCertificate=#'OTPTBSCertificate'{extensions=Extensions}}) ->
-    key_usage_includes(Extensions, digitalSignature) andalso
-        ext_key_usage_includes(Extensions, ?'id-kp-OCSPSigningOCSP-2013-88').
+    key_usage_includes(Extensions, digitalSignature).
 
 key_usage_includes(Extensions, Value) ->
     case pubkey_cert:select_extension(?'id-ce-keyUsage', Extensions) of
@@ -269,6 +268,9 @@ key_usage_includes(Extensions, Value) ->
             lists:member(Value, KeyUsage);
         _ -> false
     end.
+
+verify_ext_key_usage(#'OTPCertificate'{tbsCertificate=#'OTPTBSCertificate'{extensions=Extensions}}) ->
+    ext_key_usage_includes(Extensions, ?'id-kp-OCSPSigningOCSP-2013-88').
 
 ext_key_usage_includes(Extensions, Value) ->
     case pubkey_cert:select_extension(?'id-ce-extKeyUsage', Extensions) of

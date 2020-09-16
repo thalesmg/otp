@@ -71,13 +71,11 @@ verify_ocsp_response_test(Config) when is_list(Config) ->
 	       {org, "erlang"},
 	       {org_unit, "testing dep"}],
 
-    % Issuing CA, with OCSP endpoint URL; key usage allows signing OCSP
-    % responses directly
+    % Issuing CA, with OCSP endpoint URL
     AIA = [#'AccessDescription'{accessMethod = ?'id-pkix-ocsp',
         accessLocation = {uniformResourceIdentifier, "http://ocsp.example.org/responder"}}],
     IssuerExts = [{basic_constraints, 0},
-        {key_usage, [keyCertSign, digitalSignature]},
-        {?'id-ce-extKeyUsage', [?'id-kp-OCSPSigningPKIX1Implicit88'], true},
+        {key_usage, [keyCertSign, digitalSignature, cRLSign]},
         {?'id-pe-authorityInfoAccess', AIA, false}],
     Issuer = erl_make_certs:make_cert([
         {validity, Validity},
