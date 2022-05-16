@@ -777,6 +777,13 @@ encode_cert_status_req(
     ResponderIDListBin = encode_responderID_list(ResponderIDList),
     ReqExtnsBin = encode_request_extensions(ReqExtns),
     <<?BYTE(StatusType), ResponderIDListBin/binary, ReqExtnsBin/binary>>;
+encode_cert_status_req(
+    _StatusType,
+    #certificate_status{} = Status) ->
+    Version = {3, 4},
+    {_, EncStatus} = encode_handshake(Status, Version),
+    %% <<?BYTE(StatusType), EncStatus/binary>>;
+    EncStatus;
 encode_cert_status_req(_StatusType, <<>>) ->
     <<>>.
 
