@@ -116,7 +116,7 @@
 
 -record(server_hello, {
 	  server_version,
-	  random,             
+	  random,
 	  session_id,         % opaque SessionID<0..32>
 	  cipher_suite,       % cipher_suites
 	  compression_method, % compression_method
@@ -132,7 +132,7 @@
 -record(certificate, {
 	  asn1_certificates %% certificate_list<1..2^24-1>
 	 }).
-	
+
 %% enum { rsa, diffie_hellman } KeyExchangeAlgorithm;
 
 -define(KEY_EXCHANGE_RSA, 0).
@@ -191,7 +191,7 @@
 	  hashsign, %% term(atom(), atom())
 	  signature %% #signature{}
 	 }).
-	
+
 %% enum { anonymous, rsa, dsa } SignatureAlgorithm;
 
 -define(SIGNATURE_ANONYMOUS, 0).
@@ -232,9 +232,9 @@
 
 -record(client_key_exchange, {
 	  exchange_keys %% #encrypted_premaster_secret{} (rsa ) |
-			%%  DiffieHellmanClientPublicValue 
+			%%  DiffieHellmanClientPublicValue
 	  }).
-   
+
 -record(pre_master_secret, {
 	  client_version, % ProtocolVersion client_version
 	  random          % opaque random[46];
@@ -297,6 +297,14 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Certificate status message  RFC 6066 section 8
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-record(certificate_status, {
+         status_type,
+         response % binary()
+        }).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Renegotiation info  RFC 5746 section 3.2
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(RENEGOTIATION_EXT, 16#ff01).
@@ -324,7 +332,7 @@
 -record(signature_algorithms, {signature_scheme_list}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% RFC 7301 Application-Layer Protocol Negotiation  
+%% RFC 7301 Application-Layer Protocol Negotiation
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(ALPN_EXT, 16).
@@ -417,11 +425,6 @@
 	request_extensions = []
 }).
 
--record(certificate_status, {
-	status_type,
-	response
-}).
-
 %% Other possible values from RFC 6066, not supported
 -define(CLIENT_CERTIFICATE_URL, 2).
 -define(TRUSTED_CA_KEYS, 3).
@@ -432,8 +435,8 @@
 %% and Datagram Transport Layer Security (DTLS)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Not supported
--define(CLIENT_CERTIFICATE_TYPE, 19).            
--define(SERVER_CERTIFICATE_TYPE, 20).         
+-define(CLIENT_CERTIFICATE_TYPE, 19).
+-define(SERVER_CERTIFICATE_TYPE, 20).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% RFC 6520 Transport Layer Security (TLS) and
@@ -443,7 +446,7 @@
 -define(HS_HEARTBEAT, 15).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% RFC 6962 Certificate Transparency     
+%% RFC 6962 Certificate Transparency
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Not supported
 -define(SIGNED_CERTIFICATE_TIMESTAMP, 18).
