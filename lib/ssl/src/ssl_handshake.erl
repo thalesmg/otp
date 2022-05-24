@@ -779,30 +779,15 @@ encode_cert_status_req(
     StatusType,
     #ocsp_status_request{
         responder_id_list = ResponderIDList,
-        request_extensions = ReqExtns} = Value) ->
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> ocsp_status_req ~n  ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE,
-               #{ status_type => StatusType
-                , value => Value
-                }]),
+        request_extensions = ReqExtns}) ->
     ResponderIDListBin = encode_responderID_list(ResponderIDList),
     ReqExtnsBin = encode_request_extensions(ReqExtns),
     <<?BYTE(StatusType), ResponderIDListBin/binary, ReqExtnsBin/binary>>;
-encode_cert_status_req(StatusType, #certificate_status{} = Status) ->
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> ocsp_response ~n  ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE,
-               #{ status_type => StatusType
-                , value => Status
-                }]),
+encode_cert_status_req(_StatusType, #certificate_status{} = Status) ->
     Version = {3, 4},
     {_, EncStatus} = encode_handshake(Status, Version),
     EncStatus;
-encode_cert_status_req(StatusType, Value) ->
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> something else ~n  ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE,
-               #{ status_type => StatusType
-                , value => Value
-                }]),
+encode_cert_status_req(_StatusType, _Value) ->
     <<>>.
 
 encode_responderID_list([]) ->
@@ -1592,10 +1577,6 @@ handle_server_hello_extensions(RecordCB, Random, CipherSuite, Compression,
     end.
 
 handle_status_request(SSLOptions, ClientExtensions) ->
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> opts:~n ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE, SSLOptions]),
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> client exts:~n ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE, ClientExtensions]),
     case {SSLOptions, ClientExtensions} of
         { #{certificate_status := #certificate_status{}}
         , #{status_request := #certificate_status_request{}}
@@ -3114,30 +3095,9 @@ decode_extensions(<<?UINT16(?STATUS_REQUEST), ?UINT16(Len),
         <<?BYTE(?CERTIFICATE_STATUS_TYPE_OCSP),
           ?UINT16(0),
           ?UINT16(0)>> ->
-            io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> status_request patch:~n ~p~n~n",
-                      [?MODULE, ?FUNCTION_NAME, ?LINE,
-                       #{ cert_status => CertStatus
-                        , len => Len
-                        , msg_type => MessageType
-                        , version => Version
-                        , type_enc => <<?UINT16(?STATUS_REQUEST)>>
-                        , len_enc => <<?UINT16(Len)>>
-                        , zero_enc => <<?UINT24(0)>>
-                        }]),
             decode_extensions(Rest, Version, MessageType,
               Acc#{status_request => #certificate_status_request{}});
         _Other ->
-            io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> status_request other:~n ~p~n~n",
-                      [?MODULE, ?FUNCTION_NAME, ?LINE,
-                       #{ other => _Other
-                        , cert_status => CertStatus
-                        , len => Len
-                        , msg_type => MessageType
-                        , version => Version
-                        , type_enc => <<?UINT16(?STATUS_REQUEST)>>
-                        , len_enc => <<?UINT16(Len)>>
-                        , zero_enc => <<?UINT24(0)>>
-                        }]),
             decode_extensions(Rest, Version, MessageType, Acc)
     end;
 

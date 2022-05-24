@@ -911,29 +911,13 @@ do_client_certify_and_key_exchange(State0, Connection) ->
 
 server_certify_and_key_exchange(State0, Connection) ->
     State1 = certify_server(State0, Connection),
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>>:~n ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE,
-               #{ state0 => State0
-                , conn => Connection
-                }]),
     State2 = certificate_status(State1, Connection),
     State3 = key_exchange(State2, Connection),
     request_client_cert(State3, Connection).
 
-certificate_status(#state{ssl_options = SSLOpts = #{certificate_status := undefined}} = State, _) ->
-        io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> status undefined~n  ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE, SSLOpts]),
-    State;
 certificate_status(#state{ssl_options = #{certificate_status := #certificate_status{} = Status}} = State, Connection) ->
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> some status ~n  ~p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE,
-               #{ state => State
-                , conn => Connection
-                }]),
     Connection:queue_handshake(Status, State);
 certificate_status(State, _) ->
-    io:format(user, "~n~n~p:~p:~p >>>>>>>>>>>>>>>>>>>>>> argh, state:~n ~100p~n~n",
-              [?MODULE, ?FUNCTION_NAME, ?LINE, State]),
     State.
 
 certify_client_key_exchange(#encrypted_premaster_secret{premaster_secret= EncPMS},
