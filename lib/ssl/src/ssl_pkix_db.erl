@@ -19,7 +19,7 @@
 %%
 
 %%----------------------------------------------------------------------
-%% Purpose: Storage for trusted certificates 
+%% Purpose: Storage for trusted certificates
 %%----------------------------------------------------------------------
 
 -module(ssl_pkix_db).
@@ -29,8 +29,8 @@
 -include_lib("kernel/include/file.hrl").
 -include_lib("kernel/include/logger.hrl").
 
--export([create/1, create_pem_cache/1, 
-	 add_crls/3, remove_crls/2, remove/1, add_trusted_certs/3, 
+-export([create/1, create_pem_cache/1,
+	 add_crls/3, remove_crls/2, remove/1, add_trusted_certs/3,
          refresh_trusted_certs/1,
          refresh_trusted_certs/2,
 	 extract_trusted_certs/1,
@@ -44,7 +44,7 @@
 
 %%--------------------------------------------------------------------
 -spec create(atom()) -> [db_handle(),...].
-%% 
+%%
 %% Description: Creates a new certificate db.
 %% Note: lookup_trusted_cert/4 may be called from any process but only
 %% the process that called create may call the other functions.
@@ -69,15 +69,15 @@ create_pem_cache(Name) ->
     ets:new(Name, [named_table, set, protected]).
 
 %%--------------------------------------------------------------------
--spec remove([db_handle()]) -> ok. 
+-spec remove([db_handle()]) -> ok.
 %%
-%% Description: Removes database db  
+%% Description: Removes database db
 %%--------------------------------------------------------------------
 remove(Dbs) ->
     lists:foreach(fun({Db0, Db1})  ->
 			  true = ets:delete(Db0),
 			  true = ets:delete(Db1);
-		     (undefined) -> 
+		     (undefined) ->
 			  ok;
                      (Name) when is_atom(Name) ->
                           NormalName = ssl_pem_cache:name(normal),
@@ -85,7 +85,7 @@ remove(Dbs) ->
                           case Name of
                               NormalName ->
                                   ok;
-                              DistName -> 
+                              DistName ->
                                   ok;
                               _ ->
                                   true = ets:delete(Name)
@@ -99,8 +99,8 @@ remove(Dbs) ->
 				 undefined | {ok, public_key:combined_cert()}.
 
 %%
-%% Description: Retrives the trusted certificate identified by 
-%% <SerialNumber, Issuer>. Ref is used as it is specified  
+%% Description: Retrives the trusted certificate identified by
+%% <SerialNumber, Issuer>. Ref is used as it is specified
 %% for each connection which certificates are trusted.
 %%--------------------------------------------------------------------
 lookup_trusted_cert(DbHandle, Ref, SerialNumber, Issuer) when is_reference(Ref) ->
@@ -244,7 +244,7 @@ foldl(Fun, Acc0, Cache) ->
     ets:foldl(Fun, Acc0, Cache).
 
 
-select_cert_by_issuer(Cache, Issuer) ->    
+select_cert_by_issuer(Cache, Issuer) ->
     ets:select(Cache, [{{{'_','_', Issuer},{'_', '$1'}},[],['$$']}]).
 
 %%--------------------------------------------------------------------
@@ -352,7 +352,7 @@ new_trusted_cert_entry(File, [CertsDb, RefsDb, _ | _]) ->
 add_crls([_,_,_, {_, Mapping} | _], ?NO_DIST_POINT, CRLs) ->
     [add_crls(CRL, Mapping) || CRL <- CRLs];
 add_crls([_,_,_, {Cache, Mapping} | _], Path, CRLs) ->
-    insert(Path, CRLs, Cache), 
+    [insert(Path, CRL, Cache) || CRL <- CRLs],
     [add_crls(CRL, Mapping) || CRL <- CRLs].
 
 add_crls(CRL, Mapping) ->
@@ -371,10 +371,9 @@ remove_crls([_,_,_, {Cache, Mapping} | _], Path) ->
     end.
 
 rm_crls(CRL, Mapping) ->
-   remove(crl_issuer(CRL), CRL, Mapping). 
+   remove(crl_issuer(CRL), CRL, Mapping).
 
 crl_issuer(DerCRL) ->
     CRL = public_key:der_decode('CertificateList', DerCRL),
     TBSCRL = CRL#'CertificateList'.tbsCertList,
     TBSCRL#'TBSCertList'.issuer.
-
