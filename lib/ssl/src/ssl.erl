@@ -1589,6 +1589,7 @@ ssl_options() ->
      middlebox_comp_mode,
      max_fragment_length,
      next_protocol_selector,  next_protocols_advertised,
+     certificate_status,
      ocsp_stapling, ocsp_responder_certs, ocsp_nonce,
      padding_check,
      partial_chain,
@@ -1622,10 +1623,11 @@ update_options(Opts, Role, InheritedSslOpts) when is_map(InheritedSslOpts) ->
     {UserSslOpts, _} = split_options(Opts, ssl_options()),
     process_options(UserSslOpts, InheritedSslOpts, #{role => Role}).
 
-process_options(UserSslOpts, SslOpts0, Env) ->
+process_options(UserSslOpts, SslOpts00, Env) ->
     %% Reverse option list so we get the last set option if set twice,
     %% users depend on it.
     UserSslOptsMap = proplists:to_map(lists:reverse(UserSslOpts)),
+    SslOpts0  = opt_certificate_status(UserSslOptsMap, SslOpts00, Env),
     SslOpts1  = opt_protocol_versions(UserSslOptsMap, SslOpts0, Env),
     SslOpts2  = opt_verification(UserSslOptsMap, SslOpts1, Env),
     SslOpts3  = opt_certs(UserSslOptsMap, SslOpts2, Env),
@@ -1981,6 +1983,17 @@ opt_tickets(UserOpts, #{versions := Versions} = Opts, #{role := server}) ->
     assert_client_only(use_ticket, UserOpts),
     Opts#{session_tickets => SessionTickets, early_data => EarlyData,
           anti_replay => AntiReplay, stateless_tickets_seed => STS}.
+
+opt_certificate_status(UserOpts, Opts, #{role := Role}) ->
+    {_, CertificateStatus} = get_opt(certificate_status, undefined, UserOpts, Opts),
+    case CertificateStatus of
+        undefined -> ok;
+        #certificate_status{} -> ok;
+        _Value -> option_error(certificate_status, CertificateStatus)
+    end,
+    assert_server_only(Role, Role =/= server andalso CertificateStatus =/= undefined, 
+                       certificate_status),
+    Opts#{certificate_status => CertificateStatus}.
 
 opt_ocsp(UserOpts, #{versions := _Versions} = Opts, #{role := Role}) ->
     {Stapling, SMap} =
