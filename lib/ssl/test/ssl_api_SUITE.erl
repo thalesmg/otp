@@ -325,6 +325,8 @@ gen_api_tests() ->
      ssl_not_started,
      log_alert,
      getstat,
+     % warn_verify_none,
+     suppress_warn_verify_none,
      check_random_nonce,
      cipher_listing
     ].
