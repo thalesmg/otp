@@ -106,6 +106,9 @@
 %% Tracing
 -export([handle_trace/3]).
 
+%% EMQ fork
+-export([default_cacerts/0]).
+
 -removed({ssl_accept, '_', 
           "use ssl_handshake/1,2,3 instead"}).
 -removed({cipher_suites, 0, 
@@ -461,7 +464,7 @@
 -type client_reuse_session()     :: session_id() | {session_id(), SessionData::binary()}.
 -type client_reuse_sessions()    :: boolean() | save.
 -type client_certificate_authorities()  :: boolean().
--type client_cacerts()           :: [public_key:der_encoded()] | [public_key:combined_cert()].
+-type client_cacerts()           :: system_defaults | [public_key:der_encoded()] | [public_key:combined_cert()].
 -type client_cafile()            :: file:filename().
 -type app_level_protocol()       :: binary().
 -type client_alpn()              :: [app_level_protocol()].
@@ -507,7 +510,7 @@
                                 {early_data, server_early_data()} |
                                 {use_srtp, use_srtp()}.
 
--type server_cacerts()           :: [public_key:der_encoded()] | [public_key:combined_cert()].
+-type server_cacerts()           :: system_defaults | [public_key:der_encoded()] | [public_key:combined_cert()].
 -type server_cafile()            :: file:filename().
 -type server_alpn()              :: [app_level_protocol()].
 -type server_next_protocol()     :: [app_level_protocol()].
@@ -569,6 +572,20 @@
 %%%--------------------------------------------------------------------
 %%% API
 %%%--------------------------------------------------------------------
+
+%% This function is added in EMQ's OTP fork until the upstream provides a similar solution.
+%% The application code can be implement like:
+%%
+%% default_cacerts() ->
+%%     try
+%%         ssl:default_cacerts()
+%%     catch
+%%         _:_ ->
+%%             public_key:cacerts_get()
+%%     end.
+-spec default_cacerts() -> system_defaults.
+default_cacerts() ->
+    system_defaults.
 
 %%--------------------------------------------------------------------
 %%
@@ -1979,8 +1996,13 @@ check_cert_key(UserOpts, CertKeys, LogLevel) ->
 
 opt_cacerts(UserOpts, #{verify := Verify, log_level := LogLevel, versions := Versions} = Opts,
             #{role := Role}) ->
-    {_, CaCerts} = get_opt_list(cacerts, undefined, UserOpts, Opts),
-
+    CaCerts = case get_opt(cacerts, undefined, UserOpts, Opts) of
+                  {_, system_defaults} ->
+                      public_key:cacerts_get();
+                  _ ->
+                    {_, CaCerts0} = get_opt_list(cacerts, undefined, UserOpts, Opts),
+                    CaCerts0
+              end,
     CaCertFile = case get_opt_file(cacertfile, <<>>, UserOpts, Opts) of
                      {Where1, _FileName} when CaCerts =/= undefined ->
                          warn_override(Where1, UserOpts, cacerts, [cacertfile], LogLevel),
